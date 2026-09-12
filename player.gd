@@ -5,6 +5,7 @@ const SPEED = 120
 const JUMP_VELOCITY = -350
 @onready var coyote_timer: Timer = $CoyoteTimer
 @onready var input_buffer_timer: Timer = $InputBufferTimer
+@onready var dash_timer: Timer = $DashTimer
 
 #Jump Const and Variables
 var wall_jump_lock: float = 0.0
@@ -19,8 +20,20 @@ const GRAVITY_NORMAl: float = 14.5
 const GRAVITY_WALL: float = 30
 const WALLJUMP_VELOCITY = -350
 
+#Dash Variables
+const DASH_SPEED: float = 200
+const DASH_TIME: float = 0.18
+const DASH_COOLDOWN: float = 0.25  
+var is_dashing: bool = false
+var can_dash: bool = true
+var dash_direction: int = 1
+var dash_cooldown_timer: float = 0.0
+
 
 func _physics_process(delta: float) -> void:
+	if _dash(delta, Input.get_axis("player_left", "player_right")):
+		move_and_slide()
+		return
 	# Add the gravity.
 	if not is_on_floor():
 		var gravity = get_gravity()
@@ -102,3 +115,24 @@ func wall_slide(delta):
 		
 	else: 
 		wall_contact_coyote = max(wall_contact_coyote - delta, 0.0)
+		
+func _dash(delta: float, direction: float) -> bool:
+	if dash_cooldown_timer > 0.0:
+		dash_cooldown_timer -= delta
+	elif is_on_floor() and not is_dashing:
+		can_dash = true
+		
+	if Input.is_action_just_pressed("player_dash") and can_dash and not is_dashing:
+		is_dashing = true
+		can_dash = false
+		dash_direction = look_dir_x if direction == 0 else int(sign(direction))
+		dash_timer.start(DASH_TIME)
+
+	if is_dashing:
+		velocity.x = dash_direction * DASH_SPEED
+		velocity.y = 0
+		if dash_timer.is_stopped():
+			is_dashing = false
+			dash_cooldown_timer = DASH_COOLDOWN  
+
+	return is_dashing
