@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dqgr72gy6yoj2"
-path="res://.godot/imported/Tetrominos.png-ecfb0ced2e82b0bced223d773c597ea4.ctex"
+uid="uid://5i3wsxft1mxn"
+path="res://.godot/imported/Tetrominospreconfig.png-a3492d0ade508c495a7878ca4de62a79.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://16x16/Preconfigured/Tetrominos.png"
-dest_files=["res://.godot/imported/Tetrominos.png-ecfb0ced2e82b0bced223d773c597ea4.ctex"]
+source_file="res://16x16/Preconfigured/Tetrominospreconfig.png"
+dest_files=["res://.godot/imported/Tetrominospreconfig.png-a3492d0ade508c495a7878ca4de62a79.ctex"]
 
 [params]
 
