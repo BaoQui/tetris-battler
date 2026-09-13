@@ -1,6 +1,7 @@
 extends CharacterBody2D
 
 signal squashed
+signal win_requested
 
 # Damage / invincibility
 @export var hit_invincibility_time: float = 1.0
@@ -25,6 +26,10 @@ const JUMP_VELOCITY = -350
 
 # Win condition
 var is_win: bool = false
+var round_active: bool = false
+var knockback_timer: float = 0.0
+var _hurt_tween: Tween
+@export var knockback_control_lock: float = 0.18
 
 # Jump constants and variables
 var wall_jump_lock: float = 0.0
@@ -67,57 +72,53 @@ const UNSTUCK_PUSH_MARGIN: float = 0.5
 
 
 func _physics_process(delta: float) -> void:
-	if is_win == true:
-		animated_sprite.play("win")
+	if not round_active:
 		return
-
-	# Gravity is skipped during a dash.
+	squash_lockout = maxf(0.0, squash_lockout - delta)
+	knockback_timer = maxf(0.0, knockback_timer - delta)
 	if not is_on_floor() and dash_timer == 0.0:
-		var gravity = get_gravity()
-		velocity += gravity * delta
-		velocity += gravity * 0.75 * delta
-
-	# change_collision() prevents the hitbox from growing into a ceiling.
-	is_crouching = Input.is_action_pressed("crouch") && is_on_floor()
+		velocity += get_gravity() * 1.75 * delta
+	var wants_crouch := Input.is_action_pressed("crouch") and is_on_floor()
+	is_crouching = wants_crouch or (is_crouching and not _can_stand())
 	var direction := Input.get_axis("player_left", "player_right")
-
-	_jump(delta, direction)
-
-	if wall_jump_lock <= 0.0 and dash_timer == 0.0:
-		if direction > 0:
-			animated_sprite.flip_h = false
-			velocity.x = direction * SPEED
-		elif direction < 0:
-			animated_sprite.flip_h = true
-			velocity.x = direction * SPEED
-		else:
-			velocity.x = move_toward(velocity.x, 0, SPEED)
-
-		if direction and wall_contact_coyote == 0.0 and not is_on_wall():
-			look_dir_x = int(direction)
-
-	_dash_logic(delta)
+	change_collision(direction)
+	if knockback_timer <= 0.0:
+		_jump(delta, direction)
+		if wall_jump_lock <= 0.0 and dash_timer == 0.0:
+			if direction > 0:
+				animated_sprite.flip_h = false
+				velocity.x = direction * SPEED
+			elif direction < 0:
+				animated_sprite.flip_h = true
+				velocity.x = direction * SPEED
+			else:
+				velocity.x = move_toward(velocity.x, 0, SPEED)
+			if direction and wall_contact_coyote == 0.0 and not is_on_wall():
+				look_dir_x = int(direction)
+		_dash_logic(delta)
 	movement_audio()
 	move_and_slide()
-
-	if squash_lockout > 0.0:
-		squash_lockout -= delta
-
-	# board.gd responds to this signal by calling take_hit().
-	if squash_lockout <= 0.0 and is_on_ceiling():
+	if squash_lockout <= 0.0:
 		for i in get_slide_collision_count():
-			var collision := get_slide_collision(i)
-			var collider := collision.get_collider()
-			if collider and collider.is_in_group("tetris_piece"):
+			var contact := get_slide_collision(i)
+			var collider := contact.get_collider()
+			if not collider is Node:
+				continue
+			var falling_piece: bool = collider.is_in_group("tetris_piece")
+			var locked_blocks: bool = collider.is_in_group("tetris_blocks")
+			if not falling_piece and not locked_blocks:
+				continue
+			var slamming: bool = falling_piece and bool(collider.get_meta("slam_active", false))
+			# Inspect THIS contact's normal, not is_on_ceiling() for other contacts.
+			var hit_underside := contact.get_normal().dot(Vector2.DOWN) > 0.65
+			if slamming or hit_underside:
 				squashed.emit()
 				break
-
 	_finish_dash_frame(delta)
-	change_collision(direction)
 	_resolve_stuck_overlap()
 	update_animations(direction)
-	wall_slide(delta)
-
+	if knockback_timer <= 0.0:
+		wall_slide(delta)
 
 func _jump(delta, direction):
 	if wall_jump_lock > 0.0:
@@ -230,21 +231,10 @@ func update_animations(direction):
 			animated_sprite.play("jump" if velocity.y < 0 else "fall")
 
 
-func change_collision(direction):
-	if is_crouching:
-		collision_shape.position = Vector2(float(look_dir_x), 8.5)
-		collision_shape.shape.size = Vector2(8.0, 11.0)
-	elif animated_sprite.animation == "jump":
-		collision_shape.position = Vector2(float(look_dir_x), -3.5)
-		collision_shape.shape.size = Vector2(8.0, 9.0)
-	elif check_above():
-		# Keep the crouch shape when a ceiling prevents standing.
-		collision_shape.position = Vector2(float(look_dir_x), 8.5)
-		collision_shape.shape.size = Vector2(8.0, 11.0)
-	else:
-		collision_shape.position = Vector2(float(look_dir_x), 3.5)
-		collision_shape.shape.size = Vector2(8.0, 21.0)
-
+func change_collision(_direction):
+	# Stable feet and head bounds: animation changes must not create false hits.
+	collision_shape.position = Vector2(float(look_dir_x), 8.5 if is_crouching else 3.5)
+	collision_shape.shape.size = Vector2(8.0, 11.0 if is_crouching else 21.0)
 
 func _dash_logic(delta: float) -> void:
 	if dash_cooldown_timer > 0.0:
@@ -438,7 +428,7 @@ func movement_audio():
 # Push out of overlapping geometry using the measured penetration depth.
 func _resolve_stuck_overlap() -> void:
 	for i in UNSTUCK_MAX_PASSES:
-		var collision := move_and_collide(Vector2.ZERO, true)
+		var collision := move_and_collide(Vector2.ZERO, true, safe_margin, true)
 		if not collision:
 			break
 		var push_distance: float = collision.get_depth() + UNSTUCK_PUSH_MARGIN
@@ -447,15 +437,20 @@ func _resolve_stuck_overlap() -> void:
 
 # Shared entry point for damage from any source.
 func take_hit(knockback_dir: Vector2 = Vector2.ZERO) -> bool:
-	if squash_lockout > 0.0:
+	if not round_active or is_win or squash_lockout > 0.0:
 		return false
-
-	squash_lockout = hit_invincibility_time
+	squash_lockout = maxf(hit_invincibility_time, 0.01)
+	dash_timer = 0.0
+	wall_jump_lock = 0.0
+	wall_contact_coyote = 0.0
+	is_wall_sliding = false
+	coyote_timer.stop()
+	input_buffer_timer.stop()
+	knockback_timer = maxf(knockback_control_lock, 0.0)
 	flash_hurt()
 	_apply_knockback(knockback_dir)
 	_start_invincibility_blink()
 	return true
-
 
 func _apply_knockback(dir: Vector2) -> void:
 	var push_dir := dir
@@ -478,7 +473,7 @@ func _start_invincibility_blink() -> void:
 	animated_sprite.self_modulate.a = 1.0
 	_blink_tween = create_tween()
 
-	var cycles := maxi(1, int(hit_invincibility_time / (blink_interval * 2.0)))
+	var cycles := maxi(1, int(hit_invincibility_time / (maxf(blink_interval, 0.01) * 2.0)))
 	for i in cycles:
 		_blink_tween.tween_property(
 			animated_sprite, "self_modulate:a", 0.25, blink_interval
@@ -495,7 +490,10 @@ func flash_hurt() -> void:
 		return
 
 	var hurt_color := Color(1.0, 0.15, 0.15)
-	var tween := create_tween()
+	if _hurt_tween and _hurt_tween.is_valid():
+		_hurt_tween.kill()
+	_hurt_tween = create_tween()
+	var tween := _hurt_tween
 	tween.tween_property(animated_sprite, "modulate", hurt_color, 0.05)
 	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.05)
 	tween.tween_property(animated_sprite, "modulate", hurt_color, 0.05)
@@ -503,7 +501,81 @@ func flash_hurt() -> void:
 
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
-	if body.is_in_group("player"):
-		print("win")
-		is_win = true
+	if body == self and round_active and not is_win:
+		win_requested.emit()
+
+
+func _ready() -> void:
+	# Each player owns its shape; resizing never changes another instance.
+	if collision_shape.shape:
+		collision_shape.shape = collision_shape.shape.duplicate()
+
+
+func _can_stand() -> bool:
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(7.8, 20.8)
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.shape = shape
+	query.transform = global_transform * Transform2D(0.0, Vector2(float(look_dir_x), 3.5))
+	query.collision_mask = collision_mask
+	query.exclude = [get_rid()]
+	return get_world_2d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+
+func set_round_active(active: bool) -> void:
+	round_active = active
+	if not active:
+		velocity = Vector2.ZERO
+		walk_audio_player.stop()
+		dash_audio_player.stop()
+		jump_audio_player.stop()
+
+
+func finish_round(won: bool) -> void:
+	set_round_active(false)
+	is_win = won
+	dash_timer = 0.0
+	coyote_timer.stop()
+	input_buffer_timer.stop()
+	_stop_hurt_effects()
+	if won and animated_sprite.sprite_frames.has_animation("win"):
 		animated_sprite.play("win")
+	elif animated_sprite.sprite_frames.has_animation("death"):
+		animated_sprite.play("death")
+	else:
+		animated_sprite.stop()
+
+
+func _stop_hurt_effects() -> void:
+	if _blink_tween and _blink_tween.is_valid():
+		_blink_tween.kill()
+	if _hurt_tween and _hurt_tween.is_valid():
+		_hurt_tween.kill()
+	animated_sprite.modulate = Color.WHITE
+	animated_sprite.self_modulate = Color.WHITE
+
+
+func reset_for_round(spawn_position: Vector2) -> void:
+	set_round_active(false)
+	is_win = false
+	global_position = spawn_position
+	squash_lockout = 0.0
+	knockback_timer = 0.0
+	wall_jump_lock = 0.0
+	wall_contact_coyote = 0.0
+	is_wall_sliding = false
+	is_crouching = false
+	can_dash = true
+	dash_timer = 0.0
+	dash_cooldown_timer = 0.0
+	spawn_visual_timer = 0.0
+	was_on_floor = false
+	look_dir_x = 1
+	dash_direction = 1
+	coyote_timer.stop()
+	input_buffer_timer.stop()
+	_stop_hurt_effects()
+	animated_sprite.flip_h = false
+	collision_shape.disabled = false
+	change_collision(0)
+	animated_sprite.play("default")
