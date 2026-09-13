@@ -1,11 +1,11 @@
 extends CharacterBody2D
 
-
 const SPEED = 120
 const JUMP_VELOCITY = -350
 @onready var coyote_timer: Timer = $CoyoteTimer
 @onready var input_buffer_timer: Timer = $InputBufferTimer
 @onready var dash_timer: Timer = $DashTimer
+@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 
 #Jump Const and Variables
 var wall_jump_lock: float = 0.0
@@ -55,12 +55,17 @@ func _physics_process(delta: float) -> void:
 	#Movement Acceleration/Declea
 	_jump(delta, direction)
 	if wall_jump_lock <= 0.0:
-		if direction:
+		if direction > 0:
+			animated_sprite.flip_h = false
+			velocity.x = direction * SPEED
+		elif direction < 0:
+			animated_sprite.flip_h = true
 			velocity.x = direction * SPEED
 		else:
 			velocity.x = move_toward(velocity.x, 0, SPEED)
 
 	move_and_slide()
+	update_animations(direction)
 	wall_slide(delta)
 func _jump(delta, direction):
 		#When wall_jumping
@@ -136,3 +141,18 @@ func _dash(delta: float, direction: float) -> bool:
 			dash_cooldown_timer = DASH_COOLDOWN  
 
 	return is_dashing
+
+func update_animations(direction):
+	if is_on_floor():
+		if direction == 0:
+			animated_sprite.play("default")
+		else:
+			animated_sprite.play("walk")
+	else:
+		if wall_contact_coyote > 0:
+			animated_sprite.play("wall_slide")
+		else:
+			animated_sprite.play("jump")
+			
+			
+			
