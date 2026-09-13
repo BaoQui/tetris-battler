@@ -384,6 +384,8 @@ tile_map_layer = NodePath("Blocks")
 active_piece_layer = NodePath("Blocks/ActivePiece")
 player_path = NodePath("player")
 block_texture = ExtResource("2_6ev3c")
+fall_interval = 0.5
+soft_drop_multiplier = 16.0
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=1732612607]
 texture = ExtResource("1_52fb6")
