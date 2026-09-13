@@ -9,6 +9,10 @@ class_name TetrisBoard
 signal piece_locked(cells)
 signal player_squashed
 signal topped_out
+signal life_lost(remaining_lives: int)      # fires every squash, including the one that hits zero
+signal lives_depleted                        # fires once, right when remaining_lives hits 0
+signal lives_reset(new_lives: int)           # fires whenever the lives counter is (re)filled
+
 @export var grid_width := 8          # narrower than classic 10 = tighter
 @export var grid_height := 20        # corridor for the platformer to dodge in
 @export var cell_size := 32          # on-screen size of each grid cell (gameplay scale)
@@ -23,6 +27,9 @@ signal topped_out
 
 # --- solid falling-piece collision ---
 @export var piece_body: AnimatableBody2D   # child of tile_map_layer, Sync to Physics ON
+
+# --- lives ---
+@export var starting_lives := 3   # change this in the Inspector to tune life count
 
 # --- feel / difficulty knobs, tune these by playtesting ---
 @export var fall_interval := 0.8     # seconds per auto-drop step
@@ -58,6 +65,8 @@ signal topped_out
 @export var mega_slam_sfx: AudioStreamPlayer  # tip: use the SAME clip as slam_sfx, just raise this node's Volume dB
 @export var lock_sfx: AudioStreamPlayer       # plays on every lock, slam or not
 @export var squash_sfx: AudioStreamPlayer
+@export var line_clear_sfx: AudioStreamPlayer   # plays when a squash clears the bottom row
+@export var death_sfx: AudioStreamPlayer        # plays once, when lives hit zero
 
 var grid: Array = []                 # grid[y][x] = piece name String or ""
 var current_piece: String
@@ -78,6 +87,10 @@ var charge_time := 0.0
 # collision shapes for the falling piece — 4 reused, enable/disable per cell
 var _piece_shapes: Array[CollisionShape2D] = []
 
+var current_lives := 0
+var _board_home_y := 0.0   # tile_map_layer's normal Y, cached before the death-collapse tween
+var _squash_debounce := 0.0   # guards against the grid check and the player's physics signal both firing the same instant
+
 
 func _grid_origin() -> Vector2:
 	# Single source of truth: wherever you drag the Blocks node IS the
@@ -97,10 +110,18 @@ func _ready() -> void:
 		grid[y] = row
 	if player_path != NodePath():
 		player_ref = get_node(player_path)
-	player_squashed.connect(func():
-		if squash_sfx:
-			squash_sfx.play()
-	)
+	current_lives = starting_lives
+	player_squashed.connect(_on_player_squashed)
+	if player_ref and player_ref.has_signal("squashed"):
+		# Primary squash detection: the player's own physics contact,
+		# which correctly sees "hit from directly above" even now that
+		# PieceBody is solid and grid-cell overlap can't happen anymore.
+		player_ref.squashed.connect(_on_player_squashed)
+	if piece_body:
+		# Lets player.gd recognize this body specifically as "a falling
+		# piece" rather than any old solid object, so a bonk against a
+		# locked stack from below doesn't get mistaken for a squash.
+		piece_body.add_to_group("tetris_piece")
 	if piece_body and tile_map_layer and tile_map_layer.tile_set:
 		# Pull the real tile size from the TileSet rather than guessing with
 		# cell_size — PieceBody is a child of tile_map_layer, so it already
@@ -125,6 +146,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if slam_cooldown_timer > 0.0:
 		slam_cooldown_timer -= delta
+	if _squash_debounce > 0.0:
+		_squash_debounce -= delta
 
 	if charging:
 		charge_time += delta
@@ -255,6 +278,94 @@ func _settle_or_squash() -> void:
 		_shake_camera(gravity_lock_shake_duration, gravity_lock_shake_strength)
 
 
+## Handles every squash, whether it came from a normal settle or a hard drop.
+## Clears the piece that caused it (it never gets added to the grid — it's
+## gone, not locked) so the per-frame grounded/lock_timer check in _process
+## can't immediately re-trigger a squash on the very next frame while the
+## player is still standing in the same spot.
+func _on_player_squashed() -> void:
+	if _squash_debounce > 0.0:
+		return
+	_squash_debounce = 0.2
+
+	if squash_sfx:
+		squash_sfx.play()
+
+	if active_piece_layer:
+		active_piece_layer.clear()
+	for shape in _piece_shapes:
+		shape.disabled = true
+
+	current_lives -= 1
+	emit_signal("life_lost", current_lives)
+
+	if current_lives <= 0:
+		emit_signal("lives_depleted")
+		if death_sfx:
+			death_sfx.play()
+		_begin_death_reset()
+	else:
+		_clear_row(grid_height - 1)
+		if line_clear_sfx:
+			line_clear_sfx.play()
+		spawn_piece()
+
+
+## Clears a single row and drops everything above it down by one, same as a
+## normal Tetris line clear — used here as the "mercy" effect on a squash
+## rather than requiring the row to be full.
+func _clear_row(row: int) -> void:
+	for y in range(row, 0, -1):
+		grid[y] = grid[y - 1].duplicate()
+	var top_row := []
+	top_row.resize(grid_width)
+	for x in grid_width:
+		top_row[x] = ""
+	grid[0] = top_row
+	_redraw_grid()
+
+
+## Full redraw of tile_map_layer from the grid array. Simpler and less
+## error-prone than shifting individual set_cell/erase_cell calls up one by
+## one, and cheap enough at this board size to just do every clear.
+func _redraw_grid() -> void:
+	if not tile_map_layer:
+		return
+	tile_map_layer.clear()
+	for y in grid_height:
+		for x in grid_width:
+			var piece_name: String = grid[y][x]
+			if piece_name != "":
+				tile_map_layer.set_cell(Vector2i(x, y), block_source_id, TetrominoData.TILE_ATLAS_COORDS[piece_name])
+
+
+## Placeholder collapse visual for hitting zero lives — tweens the whole
+## stack down and out of frame so there's SOME feedback immediately. Swap
+## this out (or call finish_death_reset() directly from) your team's real
+## "blocks fall with the player's body, player returns as an angel"
+## animation once that's built — same pattern as the win cutscene: this
+## script fires the signal / does the mechanical reset, the actual
+## animation work lives outside it.
+func _begin_death_reset() -> void:
+	if tile_map_layer:
+		_board_home_y = tile_map_layer.position.y
+		var drop_distance := float(grid_height * cell_size)
+		var t := create_tween()
+		t.tween_property(tile_map_layer, "position:y", _board_home_y + drop_distance, 0.6)
+		t.tween_callback(finish_death_reset)
+	else:
+		finish_death_reset()
+
+
+## Call this once the death/respawn animation has finished playing (or
+## immediately, if you haven't hooked up that animation yet). Resets the
+## board and refills lives so the loop can continue forever.
+func finish_death_reset() -> void:
+	if tile_map_layer:
+		tile_map_layer.position.y = _board_home_y
+	reset_board()
+
+
 func _try_move(dir: Vector2i) -> void:
 	if _fits(current_piece, rotation_state, piece_pos + dir):
 		piece_pos += dir
@@ -357,7 +468,7 @@ func _lock_piece() -> void:
 	spawn_piece()
 
 
-func reset_board() -> void:
+func reset_board(reset_lives: bool = true) -> void:
 	for y in grid_height:
 		for x in grid_width:
 			grid[y][x] = ""
@@ -370,6 +481,9 @@ func reset_board() -> void:
 	charge_time = 0.0
 	for shape in _piece_shapes:
 		shape.disabled = true
+	if reset_lives:
+		current_lives = starting_lives
+		emit_signal("lives_reset", current_lives)
 	next_piece = _draw_from_bag()
 	spawn_piece()
 

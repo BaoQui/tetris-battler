@@ -498,15 +498,14 @@ player_path = NodePath("player")
 block_texture = ExtResource("2_6ev3c")
 camera = NodePath("Camera2D")
 piece_body = NodePath("Blocks/PieceBody")
+fall_interval = 0.5
+soft_drop_multiplier = 16.0
 rotate_punch_duration = 0.017
 move_sfx = NodePath("SFX/MoveSFX")
 rotate_sfx = NodePath("SFX/RotateSFX")
 charge_sfx = NodePath("SFX/ChargeSFX")
 slam_sfx = NodePath("SFX/SlamSFX")
 mega_slam_sfx = NodePath("SFX/MegaSlamSFX")
-fall_interval = 0.5
-soft_drop_multiplier = 16.0
-
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=1732612607]
 texture = ExtResource("1_52fb6")
@@ -557,4 +556,3 @@ pitch_scale = 0.7
 [node name="NextPiecePreview" type="TileMapLayer" parent="." unique_id=423981495]
 position = Vector2(119, -63)
 tile_set = SubResource("TileSet_huasi")
-
