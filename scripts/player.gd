@@ -7,6 +7,10 @@ const JUMP_VELOCITY = -350
 @onready var input_buffer_timer: Timer = $InputBufferTimer
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var ray_cast_2d: RayCast2D = $RayCast2D
+@onready var walk_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/WalkAudioPlayer
+
+
 
 # Jump constants and variables
 var wall_jump_lock: float = 0.0
@@ -40,6 +44,9 @@ const spawn_visual_interval_dash: float = 0.06
 const spawn_visual_interval_super_dash: float = 0.025
 var spawn_visual_timer: float = 0.0
 
+#Crouch Variables
+var is_crouching: bool = false
+
 
 func _physics_process(delta: float) -> void:
 	# Gravity is skipped during a dash.
@@ -48,6 +55,10 @@ func _physics_process(delta: float) -> void:
 		velocity += gravity * delta
 		velocity += gravity * 0.75 * delta
 
+	if Input.is_action_pressed("crouch") && is_on_floor():
+		is_crouching = true
+	elif is_crouching:
+		is_crouching = check_above()
 	var direction := Input.get_axis("player_left", "player_right")
 
 	_jump(delta, direction)
@@ -66,12 +77,13 @@ func _physics_process(delta: float) -> void:
 			look_dir_x = int(direction)
 
 	_dash_logic(delta)
+	movement_audio()
 	move_and_slide()
 	_finish_dash_frame(delta)
-
+	change_collision(direction)
 	update_animations(direction)
 	wall_slide(delta)
-	change_collision(direction)
+	#change_collision(direction)
 
 
 func _jump(delta, direction):
@@ -163,9 +175,15 @@ func wall_slide(delta):
 func update_animations(direction):
 	if is_on_floor():
 		if direction == 0:
-			animated_sprite.play("default")
+			if is_crouching:
+					animated_sprite.play("crouch")
+			else:
+				animated_sprite.play("default")
 		else:
-			animated_sprite.play("walk")
+			if is_crouching:
+				animated_sprite.play("crouch_walk")
+			else:
+				animated_sprite.play("walk")
 	else:
 		if wall_contact_coyote > 0:
 			animated_sprite.play("wall_slide")
@@ -175,15 +193,15 @@ func update_animations(direction):
 
 
 func change_collision(direction):
-	if is_on_floor():
-		collision_shape.position = Vector2(float(look_dir_x), 3.5)
-		collision_shape.shape.size = Vector2(8.0, 21.0)
-	else:
+	if is_crouching:
+		collision_shape.position = Vector2(float(look_dir_x), 8.5)
+		collision_shape.shape.size = Vector2(8.0, 11.0)
+	elif animated_sprite.animation == "jump":
 		collision_shape.position = Vector2(float(look_dir_x), -3.5)
 		collision_shape.shape.size = Vector2(8.0, 9.0)
-
-	collision_shape.position.x = abs(collision_shape.position.x) * look_dir_x
-
+	else:
+		collision_shape.position = Vector2(float(look_dir_x), 3.5)
+		collision_shape.shape.size = Vector2(8.0, 21.0)
 
 func _dash_logic(delta: float) -> void:
 	if dash_cooldown_timer > 0.0:
@@ -217,3 +235,11 @@ func _finish_dash_frame(delta: float) -> void:
 	# Remove dash momentum when finished.
 	if dash_timer == 0.0:
 		velocity.x = 0.0
+func check_above() -> bool:
+	return ray_cast_2d.is_colliding() 
+	
+func movement_audio():
+	walk_audio_player.pitch_scale = .8
+	if abs(velocity.x) > 0 && (is_on_floor()) && is_crouching == false:
+		if not walk_audio_player.playing: 
+			walk_audio_player.play()

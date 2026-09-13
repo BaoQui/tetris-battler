@@ -2,10 +2,31 @@
 
 [ext_resource type="Script" uid="uid://jtt2wt33l2xf" path="res://scripts/player.gd" id="1_onrkg"]
 [ext_resource type="Texture2D" uid="uid://mf57iatia3ov" path="res://Assets/PlayerSpritet.png" id="2_onrkg"]
+[ext_resource type="AudioStream" uid="uid://ck8crp56qvcdd" path="res://Assets/Walking_Audio/foot_00_asphalt_03.wav" id="3_i3pqv"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_bwjto"]
 atlas = ExtResource("2_onrkg")
 region = Rect2(48, 112, 16, 28)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7hik5"]
+atlas = ExtResource("2_onrkg")
+region = Rect2(80, 112, 16, 28)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qtqh7"]
+atlas = ExtResource("2_onrkg")
+region = Rect2(64, 28, 16, 28)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2wuci"]
+atlas = ExtResource("2_onrkg")
+region = Rect2(80, 28, 16, 28)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_iruf7"]
+atlas = ExtResource("2_onrkg")
+region = Rect2(96, 28, 16, 28)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_j5n4i"]
+atlas = ExtResource("2_onrkg")
+region = Rect2(112, 28, 16, 28)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_onrkg"]
 atlas = ExtResource("2_onrkg")
@@ -99,6 +120,31 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
+"texture": SubResource("AtlasTexture_7hik5")
+}],
+"loop": 0,
+"name": &"crouch",
+"speed": 10.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qtqh7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_2wuci")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_iruf7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_j5n4i")
+}],
+"loop": 1,
+"name": &"crouch_walk",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
 "texture": SubResource("AtlasTexture_onrkg")
 }, {
 "duration": 1.0,
@@ -144,7 +190,7 @@ animations = [{
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_op7ga")
 }, {
-"duration": 1.0,
+"duration": 4.0,
 "texture": SubResource("AtlasTexture_q13i1")
 }],
 "loop": 0,
@@ -184,17 +230,17 @@ animations = [{
 }]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_l1w6i"]
-size = Vector2(8, 9)
+size = Vector2(8, 11)
 
 [node name="player" type="CharacterBody2D" unique_id=1237093389]
 script = ExtResource("1_onrkg")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1699035135]
 sprite_frames = SubResource("SpriteFrames_wc2rq")
-animation = &"fall"
+animation = &"jump"
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=2111191397]
-position = Vector2(1, -3.5)
+position = Vector2(1, 8.5)
 shape = SubResource("RectangleShape2D_l1w6i")
 
 [node name="CoyoteTimer" type="Timer" parent="." unique_id=1291129459]
@@ -204,3 +250,14 @@ one_shot = true
 [node name="InputBufferTimer" type="Timer" parent="." unique_id=301609170]
 wait_time = 0.083
 one_shot = true
+
+[node name="RayCast2D" type="RayCast2D" parent="." unique_id=216264631]
+position = Vector2(0, 2)
+target_position = Vector2(0, -18)
+
+[node name="SFX_HOLDER" type="Node2D" parent="." unique_id=469219341]
+
+[node name="WalkAudioPlayer" type="AudioStreamPlayer2D" parent="SFX_HOLDER" unique_id=622335125]
+stream = ExtResource("3_i3pqv")
+volume_db = -10.0
+pitch_scale = 0.8
