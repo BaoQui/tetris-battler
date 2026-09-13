@@ -170,7 +170,8 @@ func update_animations(direction):
 		if wall_contact_coyote > 0:
 			animated_sprite.play("wall_slide")
 		else:
-			animated_sprite.play("jump")
+			animated_sprite.play("jump" if velocity.y < 0 else "fall")
+			
 
 
 func change_collision(direction):
