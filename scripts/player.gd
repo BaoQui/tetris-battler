@@ -176,9 +176,11 @@ func update_animations(direction):
 
 func change_collision(direction):
 	if is_on_floor():
-		collision_shape.position.y = 3.25
+		collision_shape.position = Vector2(float(look_dir_x), 3.5)
+		collision_shape.shape.size = Vector2(8.0, 21.0)
 	else:
-		collision_shape.position.y = 0.0
+		collision_shape.position = Vector2(float(look_dir_x), -3.5)
+		collision_shape.shape.size = Vector2(8.0, 9.0)
 
 	collision_shape.position.x = abs(collision_shape.position.x) * look_dir_x
 

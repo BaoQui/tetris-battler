@@ -410,4 +410,4 @@ limit_right = -85
 limit_bottom = 166
 
 [node name="player" parent="." unique_id=1237093389 instance=ExtResource("3_jv6wh")]
-position = Vector2(-48, 144)
+position = Vector2(-48, 136)
