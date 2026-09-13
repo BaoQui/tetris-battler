@@ -1,5 +1,16 @@
 extends CharacterBody2D
 
+signal squashed
+
+# Damage / invincibility
+@export var hit_invincibility_time: float = 1.0
+@export var knockback_speed: float = 220.0
+@export var knockback_up_boost: float = 160.0
+@export var blink_interval: float = 0.08
+
+var squash_lockout: float = 0.0
+var _blink_tween: Tween
+
 const SPEED = 120
 const JUMP_VELOCITY = -350
 
@@ -12,8 +23,9 @@ const JUMP_VELOCITY = -350
 @onready var dash_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/DashAudioPlayer
 @onready var jump_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/JumpAudioPlayer
 
-#Win condition:
+# Win condition
 var is_win: bool = false
+
 # Jump constants and variables
 var wall_jump_lock: float = 0.0
 const WALL_JUMP_LOCK_TIME: float = 0.18
@@ -46,24 +58,27 @@ const spawn_visual_interval_dash: float = 0.06
 const spawn_visual_interval_super_dash: float = 0.025
 var spawn_visual_timer: float = 0.0
 
-#Crouch Variables
+# Crouch variables
 var is_crouching: bool = false
+
+# Auto-unstuck
+const UNSTUCK_MAX_PASSES: int = 4
+const UNSTUCK_PUSH_MARGIN: float = 0.5
 
 
 func _physics_process(delta: float) -> void:
 	if is_win == true:
 		animated_sprite.play("win")
 		return
+
 	# Gravity is skipped during a dash.
 	if not is_on_floor() and dash_timer == 0.0:
 		var gravity = get_gravity()
 		velocity += gravity * delta
 		velocity += gravity * 0.75 * delta
 
-	if Input.is_action_pressed("crouch") && is_on_floor():
-		is_crouching = true
-	elif is_crouching:
-		is_crouching = check_above()
+	# change_collision() prevents the hitbox from growing into a ceiling.
+	is_crouching = Input.is_action_pressed("crouch") && is_on_floor()
 	var direction := Input.get_axis("player_left", "player_right")
 
 	_jump(delta, direction)
@@ -84,11 +99,24 @@ func _physics_process(delta: float) -> void:
 	_dash_logic(delta)
 	movement_audio()
 	move_and_slide()
+
+	if squash_lockout > 0.0:
+		squash_lockout -= delta
+
+	# board.gd responds to this signal by calling take_hit().
+	if squash_lockout <= 0.0 and is_on_ceiling():
+		for i in get_slide_collision_count():
+			var collision := get_slide_collision(i)
+			var collider := collision.get_collider()
+			if collider and collider.is_in_group("tetris_piece"):
+				squashed.emit()
+				break
+
 	_finish_dash_frame(delta)
 	change_collision(direction)
+	_resolve_stuck_overlap()
 	update_animations(direction)
 	wall_slide(delta)
-	#change_collision(direction)
 
 
 func _jump(delta, direction):
@@ -150,7 +178,7 @@ func _jump(delta, direction):
 		coyote_timer.stop()
 		input_buffer_timer.stop()
 
-		# Kicks down and out from the feet, like a dust puff.
+		# Kicks down and out from the feet.
 		_spawn_spark_burst(global_position, Vector2(0, 1), 110.0)
 
 	elif not is_on_floor():
@@ -209,6 +237,10 @@ func change_collision(direction):
 	elif animated_sprite.animation == "jump":
 		collision_shape.position = Vector2(float(look_dir_x), -3.5)
 		collision_shape.shape.size = Vector2(8.0, 9.0)
+	elif check_above():
+		# Keep the crouch shape when a ceiling prevents standing.
+		collision_shape.position = Vector2(float(look_dir_x), 8.5)
+		collision_shape.shape.size = Vector2(8.0, 11.0)
 	else:
 		collision_shape.position = Vector2(float(look_dir_x), 3.5)
 		collision_shape.shape.size = Vector2(8.0, 21.0)
@@ -245,7 +277,7 @@ func _spawn_dash_afterimage() -> void:
 	)
 	ghost.global_position = global_position
 	ghost.flip_h = animated_sprite.flip_h
-	ghost.modulate = Color(0.75, 0.9, 1.0, 0.6)   # icy blue-white tint
+	ghost.modulate = Color(0.75, 0.9, 1.0, 0.6)
 	get_parent().add_child(ghost)
 
 	var tween := create_tween()
@@ -403,9 +435,75 @@ func movement_audio():
 		jump_audio_player.play()
 
 
+# Push out of overlapping geometry using the measured penetration depth.
+func _resolve_stuck_overlap() -> void:
+	for i in UNSTUCK_MAX_PASSES:
+		var collision := move_and_collide(Vector2.ZERO, true)
+		if not collision:
+			break
+		var push_distance: float = collision.get_depth() + UNSTUCK_PUSH_MARGIN
+		global_position += collision.get_normal() * push_distance
+
+
+# Shared entry point for damage from any source.
+func take_hit(knockback_dir: Vector2 = Vector2.ZERO) -> bool:
+	if squash_lockout > 0.0:
+		return false
+
+	squash_lockout = hit_invincibility_time
+	flash_hurt()
+	_apply_knockback(knockback_dir)
+	_start_invincibility_blink()
+	return true
+
+
+func _apply_knockback(dir: Vector2) -> void:
+	var push_dir := dir
+	if push_dir == Vector2.ZERO:
+		push_dir = Vector2(-look_dir_x, 0)
+
+	push_dir = push_dir.normalized()
+	velocity.x = push_dir.x * knockback_speed
+	velocity.y = -knockback_up_boost
+
+
+# Animate self_modulate so blinking can run alongside the damage color flash.
+func _start_invincibility_blink() -> void:
+	if not animated_sprite:
+		return
+
+	if _blink_tween and _blink_tween.is_valid():
+		_blink_tween.kill()
+
+	animated_sprite.self_modulate.a = 1.0
+	_blink_tween = create_tween()
+
+	var cycles := maxi(1, int(hit_invincibility_time / (blink_interval * 2.0)))
+	for i in cycles:
+		_blink_tween.tween_property(
+			animated_sprite, "self_modulate:a", 0.25, blink_interval
+		)
+		_blink_tween.tween_property(
+			animated_sprite, "self_modulate:a", 1.0, blink_interval
+		)
+
+	_blink_tween.tween_callback(func(): animated_sprite.self_modulate.a = 1.0)
+
+
+func flash_hurt() -> void:
+	if not animated_sprite:
+		return
+
+	var hurt_color := Color(1.0, 0.15, 0.15)
+	var tween := create_tween()
+	tween.tween_property(animated_sprite, "modulate", hurt_color, 0.05)
+	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.05)
+	tween.tween_property(animated_sprite, "modulate", hurt_color, 0.05)
+	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.05)
+
+
 func _on_area_2d_body_entered(body: Node2D) -> void:
 	if body.is_in_group("player"):
 		print("win")
 		is_win = true
 		animated_sprite.play("win")
-		
