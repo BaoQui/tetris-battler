@@ -16,6 +16,8 @@
 [ext_resource type="AudioStream" uid="uid://nsslkf1yjk0o" path="res://Assets/Audio/floraphonic-classic-game-action-negative-19-224578.mp3" id="14_psl12"]
 [ext_resource type="AudioStream" uid="uid://cb471ogyxyq5c" path="res://Assets/Audio/u_b32baquv5u-8-bit-explosion-3-340456.mp3" id="15_2ebs2"]
 [ext_resource type="AudioStream" uid="uid://n681lsmq8558" path="res://Assets/Audio/8 Bit Music - Action Man (Mega Man Style Chiptune).mp3" id="16_oyb3p"]
+[ext_resource type="PackedScene" uid="uid://bkk2ti850fp12" path="res://win_platform.tscn" id="17_win_platform"]
+[ext_resource type="Script" uid="uid://cdx0a7iolo6o4" path="res://Scenes/area_2d.gd" id="13_ioaeq"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_6ev3c"]
 texture = ExtResource("5_iacmt")
@@ -382,6 +384,12 @@ texture = ExtResource("2_6l7je")
 12:18/0 = 0
 13:18/0 = 0
 14:18/0 = 0
+13:4/0 = 0
+14:4/0 = 0
+14:5/0 = 0
+13:5/0 = 0
+15:5/0 = 0
+15:4/0 = 0
 
 [sub_resource type="TileSet" id="TileSet_wc2rq"]
 physics_layer_0/collision_layer = 1
@@ -462,7 +470,7 @@ texture = ExtResource("5_iacmt")
 2:6/0 = 0
 3:6/0 = 0
 4:6/0 = 0
-5:6/0 = 0
+5:66/0 = 0
 6:6/0 = 0
 7:6/0 = 0
 8:6/0 = 0
@@ -492,6 +500,9 @@ texture = ExtResource("5_iacmt")
 
 [sub_resource type="TileSet" id="TileSet_huasi"]
 sources/0 = SubResource("TileSetAtlasSource_huasi")
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wc2rq"]
+size = Vector2(169, 54)
 
 [node name="MainScene" type="Node2D" unique_id=954716677 node_paths=PackedStringArray("tile_map_layer", "active_piece_layer", "next_piece_layer", "camera", "piece_body", "move_sfx", "rotate_sfx", "charge_sfx", "slam_sfx", "mega_slam_sfx", "lock_sfx", "squash_sfx", "line_clear_sfx", "death_sfx")]
 script = ExtResource("1_x6ack")
@@ -532,7 +543,7 @@ collision_enabled = false
 collision_mask = 0
 
 [node name="Border" type="TileMapLayer" parent="." unique_id=1721766932]
-tile_map_data = PackedByteArray("AAD8/woAAAAJAAIAAAD9/woAAAAJAAIAAAD+/woAAAAJAAIAAAD6/wkAAAAIAAUAAAD6/woAAAAIAAYAAAD7/woAAAAJAAYAAAD6//z/AAAIAAEAAAD6//3/AAAIAAEAAAD6//7/AAAIAAEAAAD6////AAAIAAEAAAD6/wAAAAAIAAEAAAD6/wEAAAAIAAEAAAD6/wIAAAAIAAEAAAD6/wMAAAAIAAEAAAD6/wQAAAAIAAEAAAD6/wUAAAAIAAEAAAD6/wYAAAAIAAEAAAD6/wcAAAAIAAEAAAD6/wgAAAAIAAEAAAD6//X/AAAIAAMAAAD6//b/AAAIAAQAAAD7//X/AAAJAAMAAAAEAPX/AAAKAAMAAAAFAPX/AAALAAMAAAAFAPb/AAALAAQAAAD8//X/AAAJAAAAAAD9//X/AAAJAAAAAAD+//X/AAAJAAAAAAD///X/AAAJAAAAAAAAAPX/AAAJAAAAAAABAPX/AAAJAAAAAAACAPX/AAAJAAAAAAADAPX/AAAJAAAAAAAFAPf/AAAKAAEAAAAFAPj/AAAKAAEAAAAFAPn/AAAKAAEAAAAFAPr/AAAKAAEAAAAFAPv/AAAKAAEAAAAFAPz/AAAKAAEAAAAFAP3/AAAKAAEAAAAFAP7/AAAKAAEAAAAFAP//AAAKAAEAAAAFAAAAAAAKAAEAAAAFAAEAAAAKAAEAAAAFAAIAAAAKAAEAAAAFAAMAAAAKAAEAAAAFAAQAAAAKAAEAAAAFAAUAAAAKAAEAAAAFAAYAAAAKAAEAAAAFAAcAAAAKAAEAAAAFAAgAAAAKAAEAAAD//woAAAAJAAIAAAAAAAoAAAAJAAIAAAABAAoAAAAJAAIAAAACAAoAAAAJAAIAAAADAAoAAAAJAAIAAAAEAAoAAAAKAAYAAAAFAAkAAAALAAUAAAAFAAoAAAALAAYAAAD6//v/AAAIAAEAAAD6//r/AAAIAAEAAAD6//f/AAAIAAEAAAD6//n/AAAIAAEAAAD6//j/AAAIAAEAAAA=")
+tile_map_data = PackedByteArray("AAD8/woAAAAJAAIAAAD9/woAAAAJAAIAAAD+/woAAAAJAAIAAAD6/wkAAAAIAAUAAAD6/woAAAAIAAYAAAD7/woAAAAJAAYAAAD6//z/AAAIAAEAAAD6//3/AAAIAAEAAAD6//7/AAAIAAEAAAD6////AAAIAAEAAAD6/wAAAAAIAAEAAAD6/wEAAAAIAAEAAAD6/wIAAAAIAAEAAAD6/wMAAAAIAAEAAAD6/wQAAAAIAAEAAAD6/wUAAAAIAAEAAAD6/wYAAAAIAAEAAAD6/wcAAAAIAAEAAAD6/wgAAAAIAAEAAAD6//X/AAAIAAMAAAD6//b/AAAIAAQAAAD7//X/AAAJAAMAAAAEAPX/AAAKAAMAAAAFAPX/AAALAAMAAAAFAPb/AAALAAQAAAD8//X/AAAJAAAAAAD9//X/AAAJAAAAAAD+//X/AAAJAAAAAAD///X/AAAJAAAAAAAAAPX/AAAJAAAAAAABAPX/AAAJAAAAAAACAPX/AAAJAAAAAAADAPX/AAAJAAAAAAAFAPf/AAAKAAEAAAAFAPj/AAAKAAEAAAAFAPn/AAAKAAEAAAAFAPr/AAAKAAEAAAAFAPv/AAAKAAEAAAAFAPz/AAAKAAEAAAAFAP3/AAAKAAEAAAAFAP7/AAAKAAEAAAAFAP//AAAKAAEAAAAFAAAAAAAKAAEAAAAFAAEAAAAKAAEAAAAFAAIAAAAKAAEAAAAFAAMAAAAKAAEAAAAFAAQAAAAKAAEAAAAFAAUAAAAKAAEAAAAFAAYAAAAKAAEAAAAFAAcAAAAKAAEAAAAFAAgAAAAKAAEAAAD//woAAAAJAAIAAAAAAAoAAAAJAAIAAAABAAoAAAAJAAIAAAACAAoAAAAJAAIAAAADAAoAAAAJAAIAAAAEAAoAAAAKAAYAAAAFAAkAAAALAAUAAAAFAAoAAAALAAYAAAD6//v/AAAIAAEAAAD6//r/AAAIAAEAAAD6//f/AAAIAAEAAAD6//n/AAAIAAEAAAD6//j/AAAIAAEAAAAJAPz/AAAPAAUAAAAJAP3/AAAPAAQAAAAKAPz/AAANAAUAAAAKAP3/AAANAAQAAAALAPz/AAAOAAUAAAALAP3/AAAOAAQAAAAJAP7/AAAPAAUAAAAKAP7/AAANAAUAAAALAP7/AAAOAAUAAAAMAPz/AAAPAAUAAAAMAP3/AAAPAAQAAAANAPz/AAANAAUAAAANAP3/AAANAAQAAAAMAP7/AAAPAAUAAAANAP7/AAANAAUAAAAJAPv/AAAPAAQAAAAKAPv/AAANAAQAAAALAPv/AAAOAAQAAAAMAPv/AAAPAAQAAAANAPv/AAANAAQAAAAIAPv/AAAOAAQAAAAIAPz/AAAOAAUAAAAIAP3/AAAOAAQAAAAIAP7/AAAOAAUAAAAHAPv/AAANAAQAAAAHAPz/AAANAAUAAAAHAP3/AAANAAQAAAAHAP7/AAANAAUAAAAHAP//AAANAAQAAAAIAP//AAAOAAQAAAAJAP//AAAPAAQAAAAKAP//AAANAAQAAAALAP//AAAOAAQAAAAMAP//AAAPAAQAAAANAP//AAANAAQAAAA=")
 tile_set = SubResource("TileSet_wc2rq")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=72979972]
@@ -542,7 +553,7 @@ limit_top = -166
 limit_right = -85
 limit_bottom = 166
 
-[node name="player" parent="." unique_id=1237093389 instance=ExtResource("3_jv6wh")]
+[node name="player" parent="." unique_id=1237093389 groups=["player"] instance=ExtResource("3_jv6wh")]
 position = Vector2(-48, 136)
 
 [node name="SFX" type="Node" parent="." unique_id=868853139]
@@ -583,3 +594,16 @@ tile_set = SubResource("TileSet_huasi")
 stream = ExtResource("16_oyb3p")
 autoplay = true
 parameters/looping = true
+
+[node name="Sprite2D2" parent="." unique_id=2139704791 instance=ExtResource("17_win_platform")]
+position = Vector2(0, -93)
+
+[node name="Area2D" type="Area2D" parent="." unique_id=1570903813]
+position = Vector2(-1, -6)
+script = ExtResource("13_ioaeq")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=1839408662]
+position = Vector2(-0.5, -140)
+shape = SubResource("RectangleShape2D_wc2rq")
+
+[connection signal="body_entered" from="Area2D" to="player" method="_on_area_2d_body_entered"]

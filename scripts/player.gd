@@ -1,16 +1,16 @@
 extends CharacterBody2D
+
 signal squashed
 
-# --- damage / invincibility ---
-# hit_invincibility_time doubles as the debounce so a single prolonged
-# contact (e.g. pinned in a corner) only counts once instead of firing
-# every physics frame while touching — see take_hit().
+# Damage / invincibility
 @export var hit_invincibility_time: float = 1.0
-@export var knockback_speed: float = 220.0       # horizontal pop away from the hit
-@export var knockback_up_boost: float = 160.0    # small upward pop so it doesn't read as sliding into the floor
-@export var blink_interval: float = 0.08         # half-cycle of the invincibility blink
+@export var knockback_speed: float = 220.0
+@export var knockback_up_boost: float = 160.0
+@export var blink_interval: float = 0.08
+
 var squash_lockout: float = 0.0
 var _blink_tween: Tween
+
 const SPEED = 120
 const JUMP_VELOCITY = -350
 
@@ -20,8 +20,11 @@ const JUMP_VELOCITY = -350
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 @onready var ray_cast_2d: RayCast2D = $RayCast2D
 @onready var walk_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/WalkAudioPlayer
+@onready var dash_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/DashAudioPlayer
+@onready var jump_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/JumpAudioPlayer
 
-
+# Win condition
+var is_win: bool = false
 
 # Jump constants and variables
 var wall_jump_lock: float = 0.0
@@ -55,33 +58,26 @@ const spawn_visual_interval_dash: float = 0.06
 const spawn_visual_interval_super_dash: float = 0.025
 var spawn_visual_timer: float = 0.0
 
-#Crouch Variables
+# Crouch variables
 var is_crouching: bool = false
 
-# --- auto-unstuck ---
-# How many times per physics frame we try to push out of an overlap. More
-# than one pass matters when the player is pinched between two things at
-# once (e.g. a locked block on one side and the floor on the other) —
-# resolving the first contact can reveal the second, so a single pass isn't
-# always enough to actually get free in one frame.
+# Auto-unstuck
 const UNSTUCK_MAX_PASSES: int = 4
-# Extra distance added on top of the measured penetration depth, so the
-# push actually clears the overlap instead of leaving the shapes exactly
-# touching (which move_and_collide can still report as "colliding").
 const UNSTUCK_PUSH_MARGIN: float = 0.5
 
 
 func _physics_process(delta: float) -> void:
+	if is_win == true:
+		animated_sprite.play("win")
+		return
+
 	# Gravity is skipped during a dash.
 	if not is_on_floor() and dash_timer == 0.0:
 		var gravity = get_gravity()
 		velocity += gravity * delta
 		velocity += gravity * 0.75 * delta
 
-	# Crouch is purely key-driven now — it no longer un-crouches itself
-	# based on the ceiling raycast. change_collision() is what refuses to
-	# grow the hitbox into a ceiling; is_crouching itself just reflects
-	# whether the key is held.
+	# change_collision() prevents the hitbox from growing into a ceiling.
 	is_crouching = Input.is_action_pressed("crouch") && is_on_floor()
 	var direction := Input.get_axis("player_left", "player_right")
 
@@ -104,35 +100,24 @@ func _physics_process(delta: float) -> void:
 	movement_audio()
 	move_and_slide()
 
-	# --- ADD THIS BLOCK ---
 	if squash_lockout > 0.0:
 		squash_lockout -= delta
 
-	# is_on_ceiling() plus checking WHAT we hit is the reliable way to know
-	# a falling piece landed on our head, now that pieces are solid. Grid
-	# math can't see this anymore — physics resolves the push before a
-	# cell-overlap check would ever see the two occupy the same cell.
+	# board.gd responds to this signal by calling take_hit().
 	if squash_lockout <= 0.0 and is_on_ceiling():
 		for i in get_slide_collision_count():
 			var collision := get_slide_collision(i)
 			var collider := collision.get_collider()
 			if collider and collider.is_in_group("tetris_piece"):
-				# Just report the contact. board.gd's _on_player_squashed()
-				# calls take_hit() below in response to this same signal
-				# (synchronously, same frame) — that's what actually sets
-				# squash_lockout, so by next frame this check is gated.
-				# Setting the lockout here too would double-gate against
-				# board.gd's own damage sources (floor hazard, grid
-				# backup) which never pass through this loop at all.
 				squashed.emit()
 				break
-	# ----------------------
 
 	_finish_dash_frame(delta)
 	change_collision(direction)
 	_resolve_stuck_overlap()
 	update_animations(direction)
 	wall_slide(delta)
+
 
 func _jump(delta, direction):
 	if wall_jump_lock > 0.0:
@@ -185,10 +170,16 @@ func _jump(delta, direction):
 		coyote_timer.stop()
 		input_buffer_timer.stop()
 
+		# Kicks away from the wall, biased slightly upward.
+		_spawn_spark_burst(global_position, Vector2(look_dir_x, -0.4), 55.0)
+
 	elif not input_buffer_timer.is_stopped() and not coyote_timer.is_stopped():
 		velocity.y = JUMP_VELOCITY
 		coyote_timer.stop()
 		input_buffer_timer.stop()
+
+		# Kicks down and out from the feet.
+		_spawn_spark_burst(global_position, Vector2(0, 1), 110.0)
 
 	elif not is_on_floor():
 		if Input.is_action_just_released("player_jump"):
@@ -224,7 +215,7 @@ func update_animations(direction):
 	if is_on_floor():
 		if direction == 0:
 			if is_crouching:
-					animated_sprite.play("crouch")
+				animated_sprite.play("crouch")
 			else:
 				animated_sprite.play("default")
 		else:
@@ -237,7 +228,6 @@ func update_animations(direction):
 			animated_sprite.play("wall_slide")
 		else:
 			animated_sprite.play("jump" if velocity.y < 0 else "fall")
-			
 
 
 func change_collision(direction):
@@ -248,15 +238,13 @@ func change_collision(direction):
 		collision_shape.position = Vector2(float(look_dir_x), -3.5)
 		collision_shape.shape.size = Vector2(8.0, 9.0)
 	elif check_above():
-		# Key says "stand up" but there's a ceiling right above the crouch
-		# hitbox — hold the crouch shape instead of growing straight into
-		# solid geometry (this is what used to leave the player wedged
-		# into a block the instant they released crouch under a low gap).
+		# Keep the crouch shape when a ceiling prevents standing.
 		collision_shape.position = Vector2(float(look_dir_x), 8.5)
 		collision_shape.shape.size = Vector2(8.0, 11.0)
 	else:
 		collision_shape.position = Vector2(float(look_dir_x), 3.5)
 		collision_shape.shape.size = Vector2(8.0, 21.0)
+
 
 func _dash_logic(delta: float) -> void:
 	if dash_cooldown_timer > 0.0:
@@ -276,6 +264,144 @@ func _dash_logic(delta: float) -> void:
 		velocity.x = DASH_SPEED * dash_direction * frame_fraction
 		velocity.y = 0.0
 
+		spawn_visual_timer -= delta
+		if spawn_visual_timer <= 0.0:
+			spawn_visual_timer = spawn_visual_interval_dash
+			_spawn_dash_afterimage()
+
+
+func _spawn_dash_afterimage() -> void:
+	var ghost := Sprite2D.new()
+	ghost.texture = animated_sprite.sprite_frames.get_frame_texture(
+		animated_sprite.animation, animated_sprite.frame
+	)
+	ghost.global_position = global_position
+	ghost.flip_h = animated_sprite.flip_h
+	ghost.modulate = Color(0.75, 0.9, 1.0, 0.6)
+	get_parent().add_child(ghost)
+
+	var tween := create_tween()
+	tween.tween_property(ghost, "modulate:a", 0.0, 0.2)
+	tween.tween_callback(ghost.queue_free)
+
+
+# Jump and wall-jump lightning particles.
+const LIGHTNING_COUNT := 2
+const LIGHTNING_LENGTH_MIN := 9.0
+const LIGHTNING_LENGTH_MAX := 14.0
+const LIGHTNING_LIFETIME_MIN := 0.10
+const LIGHTNING_LIFETIME_MAX := 0.15
+
+
+func _spawn_spark_burst(
+	origin: Vector2,
+	bias_dir: Vector2,
+	cone_degrees: float = 70.0
+) -> void:
+	# A narrower spread keeps the burst small.
+	var half_cone := deg_to_rad(cone_degrees) * 0.35
+
+	for i in range(LIGHTNING_COUNT):
+		var fraction := (
+			float(i) + randf_range(0.3, 0.7)
+		) / float(LIGHTNING_COUNT)
+
+		var angle := bias_dir.angle() + lerpf(
+			-half_cone, half_cone, fraction
+		)
+		var direction := Vector2.from_angle(angle)
+		var offset := Vector2(
+			randf_range(-1.0, 1.0),
+			randf_range(-1.0, 1.0)
+		)
+
+		_spawn_lightning_bolt(origin + offset, direction)
+
+
+func _spawn_lightning_bolt(
+	origin: Vector2,
+	direction: Vector2
+) -> void:
+	var bolt := Node2D.new()
+	get_parent().add_child(bolt)
+	bolt.top_level = true
+	bolt.global_position = origin.round()
+	bolt.z_index = 2
+
+	var length := randf_range(
+		LIGHTNING_LENGTH_MIN,
+		LIGHTNING_LENGTH_MAX
+	)
+	var sideways := direction.orthogonal()
+	var bend_sign := 1.0 if randf() > 0.5 else -1.0
+	var bend := randf_range(1.5, 2.5) * bend_sign
+
+	# A few broad bends, like the reference bolt.
+	var points := PackedVector2Array([
+		Vector2.ZERO,
+		(direction * length * 0.20 + sideways * bend).round(),
+		(direction * length * 0.40 + sideways * bend).round(),
+		(direction * length * 0.55 - sideways * bend).round(),
+		(direction * length * 0.75 - sideways * bend * 0.5).round(),
+		(direction * length).round()
+	])
+
+	# Small dark teal halo.
+	_add_lightning_layer(
+		bolt, points, 4.0,
+		Color(0.08, 0.35, 0.38, 0.22)
+	)
+
+	# Thin cyan edge surrounding a thicker white center.
+	_add_lightning_layer(
+		bolt, points, 2.8,
+		Color(0.45, 1.0, 1.0, 0.8)
+	)
+	_add_lightning_layer(
+		bolt, points, 1.8,
+		Color(1.0, 1.0, 1.0, 1.0)
+	)
+
+	var lifetime := randf_range(
+		LIGHTNING_LIFETIME_MIN,
+		LIGHTNING_LIFETIME_MAX
+	)
+	var drift := direction * randf_range(1.0, 3.0)
+
+	var tween := bolt.create_tween()
+	tween.set_parallel(true)
+
+	tween.tween_property(
+		bolt,
+		"global_position",
+		bolt.global_position + drift,
+		lifetime
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+	# Hold briefly, then fade without the extra flickering.
+	tween.tween_property(
+		bolt, "modulate:a", 0.0, lifetime * 0.65
+	).set_delay(lifetime * 0.35)
+
+	tween.chain().tween_callback(bolt.queue_free)
+
+
+func _add_lightning_layer(
+	bolt: Node2D,
+	points: PackedVector2Array,
+	width: float,
+	color: Color
+) -> void:
+	var line := Line2D.new()
+	line.points = points
+	line.width = width
+	line.default_color = color
+	line.antialiased = false
+	line.joint_mode = Line2D.LINE_JOINT_BEVEL
+	line.begin_cap_mode = Line2D.LINE_CAP_NONE
+	line.end_cap_mode = Line2D.LINE_CAP_NONE
+	bolt.add_child(line)
+
 
 func _finish_dash_frame(delta: float) -> void:
 	if dash_timer <= 0.0:
@@ -290,27 +416,26 @@ func _finish_dash_frame(delta: float) -> void:
 	# Remove dash momentum when finished.
 	if dash_timer == 0.0:
 		velocity.x = 0.0
+
+
 func check_above() -> bool:
-	return ray_cast_2d.is_colliding() 
-	
+	return ray_cast_2d.is_colliding()
+
+
 func movement_audio():
 	walk_audio_player.pitch_scale = .8
 	if abs(velocity.x) > 0 && (is_on_floor()) && is_crouching == false:
-		if not walk_audio_player.playing: 
+		if not walk_audio_player.playing:
 			walk_audio_player.play()
 
+	if dash_timer > 0.0 and Input.is_action_just_pressed("player_dash"):
+		dash_audio_player.play()
 
-## Safety net for the leftover stuck cases that aren't about crouching at
-## all: a newly-locked block landing partway inside the player (only the
-## TOP row of a piece counts as a squash on the board's side, so a piece
-## can legally lock while overlapping the player's feet/torso), a shape
-## swap that lands in solid geometry, or getting pinched between a wall
-## and a falling piece. move_and_collide with zero motion and test_only
-## reports whether the current shape is overlapping anything without
-## actually moving it, plus the real penetration depth via get_depth() —
-## so instead of guessing a fixed nudge amount, we push exactly far enough
-## to clear it. Looping a few times per frame handles being squeezed from
-## two directions at once, where clearing one contact reveals the other.
+	if (is_on_floor() or wall_jump_lock > 0.0) and Input.is_action_just_pressed("player_jump"):
+		jump_audio_player.play()
+
+
+# Push out of overlapping geometry using the measured penetration depth.
 func _resolve_stuck_overlap() -> void:
 	for i in UNSTUCK_MAX_PASSES:
 		var collision := move_and_collide(Vector2.ZERO, true)
@@ -320,18 +445,11 @@ func _resolve_stuck_overlap() -> void:
 		global_position += collision.get_normal() * push_distance
 
 
-## Central entry point for ANY damage source — the piece-contact check
-## above, or board.gd's grid-backup / floor-hazard / hard-drop squashes,
-## which never touch this script's own collision check at all. Returns
-## false (and does nothing) if we're still invincible from a previous hit;
-## that's the single gate that stops those sources from chain-hitting the
-## player frame after frame while the blink is still playing. On a real
-## hit: starts the invincibility window, knocks the player away from
-## wherever they got hit so they're not left stuck in place, and starts
-## the Mario-style blink for the duration of the window.
+# Shared entry point for damage from any source.
 func take_hit(knockback_dir: Vector2 = Vector2.ZERO) -> bool:
 	if squash_lockout > 0.0:
 		return false
+
 	squash_lockout = hit_invincibility_time
 	flash_hurt()
 	_apply_knockback(knockback_dir)
@@ -339,59 +457,53 @@ func take_hit(knockback_dir: Vector2 = Vector2.ZERO) -> bool:
 	return true
 
 
-## No direction supplied (the common case — a piece landing square on top,
-## or a floor hazard) just pops the player opposite whichever way they're
-## currently facing, so a hit never leaves them drifting straight back into
-## whatever just hit them. A caller with real hit geometry can still pass
-## an explicit direction.
 func _apply_knockback(dir: Vector2) -> void:
 	var push_dir := dir
 	if push_dir == Vector2.ZERO:
 		push_dir = Vector2(-look_dir_x, 0)
+
 	push_dir = push_dir.normalized()
 	velocity.x = push_dir.x * knockback_speed
 	velocity.y = -knockback_up_boost
 
 
-## Fades the sprite's alpha in and out for the whole invincibility window —
-## the "Mario" blink — instead of the quick color flash below, so it's
-## visible for exactly as long as the player actually can't be hit again.
-## Runs on self_modulate (alpha only) rather than modulate — flash_hurt()
-## below animates modulate's color, and two tweens driving the same
-## property fight each other and flicker; self_modulate is a genuinely
-## separate CanvasItem property, so both can run at once and just
-## multiply together (a red flash that fades in and out for a second).
-## Built as explicit tween steps sized to hit_invincibility_time rather
-## than Tween.set_loops(), so a trailing reset-to-opaque step can run
-## once, after the loop, without also repeating on every cycle.
+# Animate self_modulate so blinking can run alongside the damage color flash.
 func _start_invincibility_blink() -> void:
 	if not animated_sprite:
 		return
+
 	if _blink_tween and _blink_tween.is_valid():
 		_blink_tween.kill()
+
 	animated_sprite.self_modulate.a = 1.0
 	_blink_tween = create_tween()
+
 	var cycles := maxi(1, int(hit_invincibility_time / (blink_interval * 2.0)))
 	for i in cycles:
-		_blink_tween.tween_property(animated_sprite, "self_modulate:a", 0.25, blink_interval)
-		_blink_tween.tween_property(animated_sprite, "self_modulate:a", 1.0, blink_interval)
+		_blink_tween.tween_property(
+			animated_sprite, "self_modulate:a", 0.25, blink_interval
+		)
+		_blink_tween.tween_property(
+			animated_sprite, "self_modulate:a", 1.0, blink_interval
+		)
+
 	_blink_tween.tween_callback(func(): animated_sprite.self_modulate.a = 1.0)
 
 
-## Quick, obvious hit-flash on the sprite — a red/white blink rather than a
-## single fade, since a one-shot tween back to white read as "barely
-## noticeable" in testing. Public (no underscore) so board.gd can call this
-## directly for damage sources it detects itself (bottom hazard, grid-level
-## squash backup) that never touch this script's own squash-detection path.
-## Animates modulate (color), NOT self_modulate — see the blink above for
-## why that separation matters. Runs alongside the blink every time, called
-## from take_hit(), so a hit always reads as "red pulse, then blinking".
 func flash_hurt() -> void:
 	if not animated_sprite:
 		return
+
 	var hurt_color := Color(1.0, 0.15, 0.15)
 	var tween := create_tween()
 	tween.tween_property(animated_sprite, "modulate", hurt_color, 0.05)
 	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.05)
 	tween.tween_property(animated_sprite, "modulate", hurt_color, 0.05)
 	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.05)
+
+
+func _on_area_2d_body_entered(body: Node2D) -> void:
+	if body.is_in_group("player"):
+		print("win")
+		is_win = true
+		animated_sprite.play("win")
