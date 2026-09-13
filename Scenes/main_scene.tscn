@@ -11,6 +11,8 @@
 [ext_resource type="AudioStream" uid="uid://bpeumqlvougxr" path="res://Assets/Audio/47313572-experimental-8-bit-sound-270302.mp3" id="9_76v2p"]
 [ext_resource type="AudioStream" uid="uid://c74ae2fo6d3xy" path="res://Assets/Audio/u_b32baquv5u-explosion-9-340460.mp3" id="10_drdnd"]
 [ext_resource type="AudioStream" uid="uid://bcri0df3nj612" path="res://Assets/Audio/u_b32baquv5u-explosion-7-340461.mp3" id="11_76v2p"]
+[ext_resource type="PackedScene" uid="uid://bkk2ti850fp12" path="res://win_platform.tscn" id="12_drdnd"]
+[ext_resource type="Script" uid="uid://cdx0a7iolo6o4" path="res://Scenes/area_2d.gd" id="13_ioaeq"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_6ev3c"]
 texture = ExtResource("5_iacmt")
@@ -488,6 +490,9 @@ texture = ExtResource("5_iacmt")
 [sub_resource type="TileSet" id="TileSet_huasi"]
 sources/0 = SubResource("TileSetAtlasSource_huasi")
 
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wc2rq"]
+size = Vector2(169, 54)
+
 [node name="MainScene" type="Node2D" unique_id=954716677 node_paths=PackedStringArray("tile_map_layer", "active_piece_layer", "next_piece_layer", "camera", "piece_body", "move_sfx", "rotate_sfx", "charge_sfx", "slam_sfx", "mega_slam_sfx")]
 script = ExtResource("1_x6ack")
 grid_width = 10
@@ -498,7 +503,7 @@ player_path = NodePath("player")
 block_texture = ExtResource("2_6ev3c")
 camera = NodePath("Camera2D")
 piece_body = NodePath("Blocks/PieceBody")
-fall_interval = 0.5
+fall_interval = 0.4
 soft_drop_multiplier = 16.0
 rotate_punch_duration = 0.017
 move_sfx = NodePath("SFX/MoveSFX")
@@ -532,7 +537,7 @@ limit_top = -166
 limit_right = -85
 limit_bottom = 166
 
-[node name="player" parent="." unique_id=1237093389 instance=ExtResource("3_jv6wh")]
+[node name="player" parent="." unique_id=1237093389 groups=["player"] instance=ExtResource("3_jv6wh")]
 position = Vector2(-48, 136)
 
 [node name="SFX" type="Node" parent="." unique_id=868853139]
@@ -556,3 +561,16 @@ pitch_scale = 0.7
 [node name="NextPiecePreview" type="TileMapLayer" parent="." unique_id=423981495]
 position = Vector2(119, -63)
 tile_set = SubResource("TileSet_huasi")
+
+[node name="Sprite2D2" parent="." unique_id=2139704791 instance=ExtResource("12_drdnd")]
+position = Vector2(0, -93)
+
+[node name="Area2D" type="Area2D" parent="." unique_id=1570903813]
+position = Vector2(-1, -6)
+script = ExtResource("13_ioaeq")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=1839408662]
+position = Vector2(-0.5, -140)
+shape = SubResource("RectangleShape2D_wc2rq")
+
+[connection signal="body_entered" from="Area2D" to="player" method="_on_area_2d_body_entered"]

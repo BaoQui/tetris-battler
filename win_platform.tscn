@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://bkk2ti850fp12"]
+
+[ext_resource type="Texture2D" uid="uid://kdnb7yyyeewr" path="res://Assets/win_platform.png" id="1_l7dh8"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wc2rq"]
+size = Vector2(160, 3)
+
+[node name="Sprite2D" type="Sprite2D" unique_id=2139704791]
+texture = ExtResource("1_l7dh8")
+
+[node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=849074780]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D" unique_id=512501391]
+position = Vector2(0, -5.5)
+shape = SubResource("RectangleShape2D_wc2rq")
+one_way_collision = true

@@ -9,9 +9,11 @@ const JUMP_VELOCITY = -350
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 @onready var ray_cast_2d: RayCast2D = $RayCast2D
 @onready var walk_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/WalkAudioPlayer
+@onready var dash_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/DashAudioPlayer
+@onready var jump_audio_player: AudioStreamPlayer2D = $SFX_HOLDER/JumpAudioPlayer
 
-
-
+#Win condition:
+var is_win: bool = false
 # Jump constants and variables
 var wall_jump_lock: float = 0.0
 const WALL_JUMP_LOCK_TIME: float = 0.18
@@ -49,6 +51,9 @@ var is_crouching: bool = false
 
 
 func _physics_process(delta: float) -> void:
+	if is_win == true:
+		animated_sprite.play("win")
+		return
 	# Gravity is skipped during a dash.
 	if not is_on_floor() and dash_timer == 0.0:
 		var gravity = get_gravity()
@@ -137,10 +142,16 @@ func _jump(delta, direction):
 		coyote_timer.stop()
 		input_buffer_timer.stop()
 
+		# Kicks away from the wall, biased slightly upward.
+		_spawn_spark_burst(global_position, Vector2(look_dir_x, -0.4), 55.0)
+
 	elif not input_buffer_timer.is_stopped() and not coyote_timer.is_stopped():
 		velocity.y = JUMP_VELOCITY
 		coyote_timer.stop()
 		input_buffer_timer.stop()
+
+		# Kicks down and out from the feet, like a dust puff.
+		_spawn_spark_burst(global_position, Vector2(0, 1), 110.0)
 
 	elif not is_on_floor():
 		if Input.is_action_just_released("player_jump"):
@@ -176,7 +187,7 @@ func update_animations(direction):
 	if is_on_floor():
 		if direction == 0:
 			if is_crouching:
-					animated_sprite.play("crouch")
+				animated_sprite.play("crouch")
 			else:
 				animated_sprite.play("default")
 		else:
@@ -189,7 +200,6 @@ func update_animations(direction):
 			animated_sprite.play("wall_slide")
 		else:
 			animated_sprite.play("jump" if velocity.y < 0 else "fall")
-			
 
 
 func change_collision(direction):
@@ -202,6 +212,7 @@ func change_collision(direction):
 	else:
 		collision_shape.position = Vector2(float(look_dir_x), 3.5)
 		collision_shape.shape.size = Vector2(8.0, 21.0)
+
 
 func _dash_logic(delta: float) -> void:
 	if dash_cooldown_timer > 0.0:
@@ -221,6 +232,144 @@ func _dash_logic(delta: float) -> void:
 		velocity.x = DASH_SPEED * dash_direction * frame_fraction
 		velocity.y = 0.0
 
+		spawn_visual_timer -= delta
+		if spawn_visual_timer <= 0.0:
+			spawn_visual_timer = spawn_visual_interval_dash
+			_spawn_dash_afterimage()
+
+
+func _spawn_dash_afterimage() -> void:
+	var ghost := Sprite2D.new()
+	ghost.texture = animated_sprite.sprite_frames.get_frame_texture(
+		animated_sprite.animation, animated_sprite.frame
+	)
+	ghost.global_position = global_position
+	ghost.flip_h = animated_sprite.flip_h
+	ghost.modulate = Color(0.75, 0.9, 1.0, 0.6)   # icy blue-white tint
+	get_parent().add_child(ghost)
+
+	var tween := create_tween()
+	tween.tween_property(ghost, "modulate:a", 0.0, 0.2)
+	tween.tween_callback(ghost.queue_free)
+
+
+# Jump and wall-jump lightning particles.
+const LIGHTNING_COUNT := 2
+const LIGHTNING_LENGTH_MIN := 9.0
+const LIGHTNING_LENGTH_MAX := 14.0
+const LIGHTNING_LIFETIME_MIN := 0.10
+const LIGHTNING_LIFETIME_MAX := 0.15
+
+
+func _spawn_spark_burst(
+	origin: Vector2,
+	bias_dir: Vector2,
+	cone_degrees: float = 70.0
+) -> void:
+	# A narrower spread keeps the burst small.
+	var half_cone := deg_to_rad(cone_degrees) * 0.35
+
+	for i in range(LIGHTNING_COUNT):
+		var fraction := (
+			float(i) + randf_range(0.3, 0.7)
+		) / float(LIGHTNING_COUNT)
+
+		var angle := bias_dir.angle() + lerpf(
+			-half_cone, half_cone, fraction
+		)
+		var direction := Vector2.from_angle(angle)
+		var offset := Vector2(
+			randf_range(-1.0, 1.0),
+			randf_range(-1.0, 1.0)
+		)
+
+		_spawn_lightning_bolt(origin + offset, direction)
+
+
+func _spawn_lightning_bolt(
+	origin: Vector2,
+	direction: Vector2
+) -> void:
+	var bolt := Node2D.new()
+	get_parent().add_child(bolt)
+	bolt.top_level = true
+	bolt.global_position = origin.round()
+	bolt.z_index = 2
+
+	var length := randf_range(
+		LIGHTNING_LENGTH_MIN,
+		LIGHTNING_LENGTH_MAX
+	)
+	var sideways := direction.orthogonal()
+	var bend_sign := 1.0 if randf() > 0.5 else -1.0
+	var bend := randf_range(1.5, 2.5) * bend_sign
+
+	# A few broad bends, like the reference bolt.
+	var points := PackedVector2Array([
+		Vector2.ZERO,
+		(direction * length * 0.20 + sideways * bend).round(),
+		(direction * length * 0.40 + sideways * bend).round(),
+		(direction * length * 0.55 - sideways * bend).round(),
+		(direction * length * 0.75 - sideways * bend * 0.5).round(),
+		(direction * length).round()
+	])
+
+	# Small dark teal halo.
+	_add_lightning_layer(
+		bolt, points, 4.0,
+		Color(0.08, 0.35, 0.38, 0.22)
+	)
+
+	# Thin cyan edge surrounding a thicker white center.
+	_add_lightning_layer(
+		bolt, points, 2.8,
+		Color(0.45, 1.0, 1.0, 0.8)
+	)
+	_add_lightning_layer(
+		bolt, points, 1.8,
+		Color(1.0, 1.0, 1.0, 1.0)
+	)
+
+	var lifetime := randf_range(
+		LIGHTNING_LIFETIME_MIN,
+		LIGHTNING_LIFETIME_MAX
+	)
+	var drift := direction * randf_range(1.0, 3.0)
+
+	var tween := bolt.create_tween()
+	tween.set_parallel(true)
+
+	tween.tween_property(
+		bolt,
+		"global_position",
+		bolt.global_position + drift,
+		lifetime
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+	# Hold briefly, then fade without the extra flickering.
+	tween.tween_property(
+		bolt, "modulate:a", 0.0, lifetime * 0.65
+	).set_delay(lifetime * 0.35)
+
+	tween.chain().tween_callback(bolt.queue_free)
+
+
+func _add_lightning_layer(
+	bolt: Node2D,
+	points: PackedVector2Array,
+	width: float,
+	color: Color
+) -> void:
+	var line := Line2D.new()
+	line.points = points
+	line.width = width
+	line.default_color = color
+	line.antialiased = false
+	line.joint_mode = Line2D.LINE_JOINT_BEVEL
+	line.begin_cap_mode = Line2D.LINE_CAP_NONE
+	line.end_cap_mode = Line2D.LINE_CAP_NONE
+	bolt.add_child(line)
+
 
 func _finish_dash_frame(delta: float) -> void:
 	if dash_timer <= 0.0:
@@ -235,11 +384,28 @@ func _finish_dash_frame(delta: float) -> void:
 	# Remove dash momentum when finished.
 	if dash_timer == 0.0:
 		velocity.x = 0.0
+
+
 func check_above() -> bool:
-	return ray_cast_2d.is_colliding() 
-	
+	return ray_cast_2d.is_colliding()
+
+
 func movement_audio():
 	walk_audio_player.pitch_scale = .8
 	if abs(velocity.x) > 0 && (is_on_floor()) && is_crouching == false:
-		if not walk_audio_player.playing: 
+		if not walk_audio_player.playing:
 			walk_audio_player.play()
+
+	if dash_timer > 0.0 and Input.is_action_just_pressed("player_dash"):
+		dash_audio_player.play()
+
+	if (is_on_floor() or wall_jump_lock > 0.0) and Input.is_action_just_pressed("player_jump"):
+		jump_audio_player.play()
+
+
+func _on_area_2d_body_entered(body: Node2D) -> void:
+	if body.is_in_group("player"):
+		print("win")
+		is_win = true
+		animated_sprite.play("win")
+		
