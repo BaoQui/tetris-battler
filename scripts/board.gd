@@ -9,7 +9,6 @@ class_name TetrisBoard
 signal piece_locked(cells)
 signal player_squashed
 signal topped_out
-
 @export var grid_width := 8          # narrower than classic 10 = tighter
 @export var grid_height := 20        # corridor for the platformer to dodge in
 @export var cell_size := 32          # on-screen size of each grid cell (gameplay scale)
