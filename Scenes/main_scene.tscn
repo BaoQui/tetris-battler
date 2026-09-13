@@ -11,6 +11,11 @@
 [ext_resource type="AudioStream" uid="uid://bpeumqlvougxr" path="res://Assets/Audio/47313572-experimental-8-bit-sound-270302.mp3" id="9_76v2p"]
 [ext_resource type="AudioStream" uid="uid://c74ae2fo6d3xy" path="res://Assets/Audio/u_b32baquv5u-explosion-9-340460.mp3" id="10_drdnd"]
 [ext_resource type="AudioStream" uid="uid://bcri0df3nj612" path="res://Assets/Audio/u_b32baquv5u-explosion-7-340461.mp3" id="11_76v2p"]
+[ext_resource type="AudioStream" uid="uid://bn0qjo6x2tvtn" path="res://Assets/Audio/Tetris (GB) (21)-line_clear.wav" id="12_drdnd"]
+[ext_resource type="AudioStream" uid="uid://dadwp2c75ol4h" path="res://Assets/Audio/drummusiclooper5000-lose-sfx-365579.mp3" id="13_gnsmo"]
+[ext_resource type="AudioStream" uid="uid://nsslkf1yjk0o" path="res://Assets/Audio/floraphonic-classic-game-action-negative-19-224578.mp3" id="14_psl12"]
+[ext_resource type="AudioStream" uid="uid://cb471ogyxyq5c" path="res://Assets/Audio/u_b32baquv5u-8-bit-explosion-3-340456.mp3" id="15_2ebs2"]
+[ext_resource type="AudioStream" uid="uid://n681lsmq8558" path="res://Assets/Audio/8 Bit Music - Action Man (Mega Man Style Chiptune).mp3" id="16_oyb3p"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_6ev3c"]
 texture = ExtResource("5_iacmt")
@@ -488,7 +493,7 @@ texture = ExtResource("5_iacmt")
 [sub_resource type="TileSet" id="TileSet_huasi"]
 sources/0 = SubResource("TileSetAtlasSource_huasi")
 
-[node name="MainScene" type="Node2D" unique_id=954716677 node_paths=PackedStringArray("tile_map_layer", "active_piece_layer", "next_piece_layer", "camera", "piece_body", "move_sfx", "rotate_sfx", "charge_sfx", "slam_sfx", "mega_slam_sfx")]
+[node name="MainScene" type="Node2D" unique_id=954716677 node_paths=PackedStringArray("tile_map_layer", "active_piece_layer", "next_piece_layer", "camera", "piece_body", "move_sfx", "rotate_sfx", "charge_sfx", "slam_sfx", "mega_slam_sfx", "lock_sfx", "squash_sfx", "line_clear_sfx", "death_sfx")]
 script = ExtResource("1_x6ack")
 grid_width = 10
 tile_map_layer = NodePath("Blocks")
@@ -498,6 +503,7 @@ player_path = NodePath("player")
 block_texture = ExtResource("2_6ev3c")
 camera = NodePath("Camera2D")
 piece_body = NodePath("Blocks/PieceBody")
+respawn_cells_above_board = -8
 fall_interval = 0.5
 soft_drop_multiplier = 16.0
 rotate_punch_duration = 0.017
@@ -506,6 +512,10 @@ rotate_sfx = NodePath("SFX/RotateSFX")
 charge_sfx = NodePath("SFX/ChargeSFX")
 slam_sfx = NodePath("SFX/SlamSFX")
 mega_slam_sfx = NodePath("SFX/MegaSlamSFX")
+lock_sfx = NodePath("SFX/LockSFX")
+squash_sfx = NodePath("SFX/LifeSFX")
+line_clear_sfx = NodePath("SFX/LineClearSFX")
+death_sfx = NodePath("SFX/DeathSFX")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=1732612607]
 texture = ExtResource("1_52fb6")
@@ -553,6 +563,23 @@ stream = ExtResource("10_drdnd")
 stream = ExtResource("11_76v2p")
 pitch_scale = 0.7
 
+[node name="LineClearSFX" type="AudioStreamPlayer" parent="SFX" unique_id=2034337237]
+stream = ExtResource("12_drdnd")
+
+[node name="DeathSFX" type="AudioStreamPlayer" parent="SFX" unique_id=671312792]
+stream = ExtResource("13_gnsmo")
+
+[node name="LifeSFX" type="AudioStreamPlayer" parent="SFX" unique_id=7985391]
+stream = ExtResource("14_psl12")
+
+[node name="LockSFX" type="AudioStreamPlayer" parent="SFX" unique_id=1096489709]
+stream = ExtResource("15_2ebs2")
+
 [node name="NextPiecePreview" type="TileMapLayer" parent="." unique_id=423981495]
 position = Vector2(119, -63)
 tile_set = SubResource("TileSet_huasi")
+
+[node name="BackgroundMsc" type="AudioStreamPlayer" parent="." unique_id=1300254971]
+stream = ExtResource("16_oyb3p")
+autoplay = true
+parameters/looping = true
